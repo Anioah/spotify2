@@ -1,0 +1,162 @@
+1-cd /etc/nginx/
+2-sudo rm nginx.conf
+3-sudo vi nginx.conf
+user                 nginx;
+pid                  /run/nginx.pid;
+worker_processes     auto;
+worker_rlimit_nofile 65535;
+
+events {
+    multi_accept       on;
+    worker_connections 65535;
+}
+
+http {
+    charset                utf-8;
+    sendfile               on;
+    tcp_nopush             on;
+    tcp_nodelay            on;
+    server_tokens          off;
+    log_not_found          off;
+    types_hash_max_size    2048;
+    types_hash_bucket_size 64;
+    client_max_body_size   16M;
+
+    # MIME
+    include                mime.types;
+    default_type           application/octet-stream;
+
+    # Logging
+    access_log             /var/log/nginx/access.log;
+    error_log              /var/log/nginx/error.log warn;
+
+    # Connection header for WebSocket reverse proxy
+    map $http_upgrade $connection_upgrade {
+        default upgrade;
+        ""      close;
+    }
+
+    # Load configs
+    include                /etc/nginx/conf.d/*.conf;
+}
+****************************************************************************
+
+cd /etc/nginx
+cd conf.d
+sudo nano app.conf
+
+server {
+    listen      80;
+    listen      [::]:80;
+    server_name laravel.namelessnetwork.com.mx;
+    root        /var/www/app-laravel/public;
+    index       index.php;
+
+    # security
+    include     nginxconfig.io/security.conf;
+
+    # restrict methods
+    if ($request_method !~ ^(GET|POST|PUT|PATCH|DELETE)$) {
+        return '405';
+    }
+
+    # index.html fallback
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # index.php fallback
+    location ~ ^/api/ {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location ~ \.php {
+      include fastcgi.conf;
+      fastcgi_split_path_info ^(.+\.php)(/.+)$;
+      fastcgi_pass unix:/run/php-fpm/www.sock;
+    }
+    location ~ /\.ht {
+      deny all;
+    }
+
+    # additional config
+    include nginxconfig.io/general.conf;
+}
+
+
+
+
+cd ..
+sudo mkdir nginxconfig.io
+cd nginxconfig.io
+sudo nano general.conf
+
+# favicon.ico
+location = /favicon.ico {
+    log_not_found off;
+    access_log    off;
+}
+
+# robots.txt
+location = /robots.txt {
+    log_not_found off;
+    access_log    off;
+}
+
+# assets, media
+location ~* \.(?:css(\.map)?|js(\.map)?|jpe?g|png|gif|ico|cur|heic|webp|tiff?|mp3|m4a|aac|ogg|midi?|wav|mp4|mov|webm|mpe?g|avi|ogv|flv|wmv)$ {
+    expires    7d;
+    access_log off;
+}
+
+# svg, fonts
+location ~* \.(?:svgz?|ttf|ttc|otf|eot|woff2?)$ {
+    add_header Access-Control-Allow-Origin "*";
+    expires    7d;
+    access_log off;
+}
+
+# gzip
+gzip            on;
+gzip_vary       on;
+gzip_proxied    any;
+gzip_comp_level 6;
+gzip_types      text/plain text/css text/xml application/json application/javascript application/rss+xml application/atom+xml image/svg+xml;
+
+
+
+
+sudo nano security.conf
+
+# security headers
+add_header X-Frame-Options           "SAMEORIGIN" always;
+add_header X-XSS-Protection          "1; mode=block" always;
+add_header X-Content-Type-Options    "nosniff" always;
+add_header Referrer-Policy           "no-referrer-when-downgrade" always;
+add_header Content-Security-Policy   "default-src 'self' http: https: data: blob: 'unsafe-inline'" always;
+#add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+# . files
+location ~ /\.(?!well-known) {
+    deny all;
+}
+
+// Deploy laravel app
+----Install PHP 7.4 ----
+45-> dnf install https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm
+46-> dnf install https://rpms.remirepo.net/enterprise/remi-release-8.rpm
+47-> dnf module list php
+47-> dnf module reset php
+48-> dnf module enable php:remi-7.4
+49-> dnf install php php-fpm php-common php-xml php-mbstring php-json php-zip php-mysqlnd
+50-> nano /etc/php-fpm.d/www.conf --> cambiar apache por nginx
+
+sudo nginx -t && sudo systemctl restart nginx
+
+57-> sudo chown -R nginx:nginx /var/www/html/S-SDLC/
+58-> sudo chown -R nginx:nginx /var/www/html/S-SDLC/*
+59-> sudo chcon -R -t httpd_sys_rw_content_t storage
+su
+
+
+
